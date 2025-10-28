@@ -1,0 +1,33 @@
+name: Clean Feature Branch on PR Merge
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  delete-branch:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete remote branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = "${{ github.event.pull_request.head.ref }}";
+            const repo = "${{ github.repository }}"; // Ej: "usuario/nombre-repo"
+            const [owner, repoName] = repo.split('/'); // ✅ Aquí SÍ se puede usar split() en JS!
+
+            try {
+              await github.rest.git.deleteRef({
+                owner,
+                repo: repoName,
+                ref: `heads/${branch}`
+              });
+              console.log(`✅ Deleted remote branch: ${branch}`);
+            } catch (error) {
+              console.error(`❌ Failed to delete branch ${branch}:`, error.message);
+            }

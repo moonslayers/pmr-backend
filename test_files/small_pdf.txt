@@ -1,0 +1,9 @@
+Este es un archivo PDF de prueba pequeño para validar la funcionalidad de carga de evidencias en el sistema SAGEM.
+
+Contenido de prueba:
+- Archivo PDF válido
+- Tamaño pequeño (< 1MB)
+- Para pruebas de integración
+
+Fecha de creación: 2025-10-16
+Propósito: Pruebas del sistema de solicitudes con evidencias

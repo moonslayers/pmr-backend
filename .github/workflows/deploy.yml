@@ -1,0 +1,39 @@
+name: Deploy Laravel
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # --------------------------------------------------
+      # 🔧 Despliegue del Backend Laravel
+      # --------------------------------------------------
+      - name: 🐘 Deploy Laravel Backend
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          script: |
+            cd /home/ubuntu/Proyecto/pmr-backend
+            git pull origin main
+
+            # Instalar dependencias
+            composer install --optimize-autoloader --no-dev
+
+            # Caché
+            php artisan config:cache
+            php artisan route:cache
+
+            # Opcional: migraciones (solo si es seguro en producción)
+            php artisan migrate --force
+
+            echo "✅ Backend Laravel desplegado"
