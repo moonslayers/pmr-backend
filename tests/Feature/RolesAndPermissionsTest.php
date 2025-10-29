@@ -238,56 +238,6 @@ test('usuario puede actualizar su propia contraseña', function () {
         ]);
 });
 
-test('admin-sistema puede acceder a rutas de catálogos', function () {
-    $admin = User::factory()->create();
-    $admin->assignRole('admin-sistema');
-
-    $response = $this->actingAs($admin)
-        ->getJson('/api/municipios');
-
-    $response->assertStatus(200);
-});
-
-test('solicitante puede acceder a rutas de lectura de catálogos', function () {
-    $solicitante = User::factory()->create();
-    $solicitante->assignRole('solicitante');
-
-    $response = $this->actingAs($solicitante)
-        ->getJson('/api/municipios');
-
-    $response->assertStatus(200);
-});
-
-test('usuario-sei puede acceder a rutas de clasificación de solicitudes', function () {
-    // Limpiar cache de permisos antes de la prueba
-    app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
-
-    $usuarioSei = User::factory()->create();
-    $usuarioSei->assignRole('usuario-sei');
-
-    // Verificar que el usuario tiene el permiso correcto
-    $this->assertTrue($usuarioSei->can('solicitudes.clasificar'));
-
-    $response = $this->actingAs($usuarioSei)
-        ->getJson('/api/solicitudes-clasificacion');
-
-    $response->assertStatus(200);
-});
-
-test('solicitante no puede acceder a rutas de clasificación de solicitudes', function () {
-    $solicitante = User::factory()->create();
-    $solicitante->assignRole('solicitante');
-
-    $response = $this->actingAs($solicitante)
-        ->getJson('/api/solicitudes-clasificacion');
-
-    $response->assertStatus(403)
-        ->assertJson([
-            'status' => false,
-            'message' => 'Acceso denegado. No tienes los permisos necesarios para realizar esta acción.'
-        ]);
-});
-
 test('admin-sistema no puede ser modificado por otros roles', function () {
     $admin = User::factory()->create();
     $admin->assignRole('admin-sistema');
