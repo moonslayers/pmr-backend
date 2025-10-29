@@ -1,0 +1,133 @@
+# .github/workflows/laravel-tests.yml
+
+name: Laravel Tests
+
+# 1. Disparador (Trigger)
+on:
+  pull_request:
+    branches: [ main, develop ] # Se ejecuta en cada Pull Request a main o develop
+
+# 2. Permisos
+permissions:
+  contents: read
+
+# 3. Jobs (Tareas)
+jobs:
+  laravel-tests:
+    runs-on: ubuntu-latest # Usamos la última versión de Ubuntu
+
+    # 4. Servicios (Base de Datos)
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: yes
+          MYSQL_DATABASE: laravel_test_db
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+      # 5. Paso 1: Obtener el código del repositorio
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Necesario para obtener el historial completo y comparar archivos
+
+      # 6. Paso 2: Configurar PHP
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3' # Cambia esto a la versión de PHP que uses
+          extensions: bcmath, ctype, fileinfo, json, mbstring, openssl, pdo, tokenizer, xml, mysql, pdo_mysql
+          coverage: xdebug # Habilita XDebug para la cobertura de código (opcional)
+
+      # 7. Paso 3: Copiar archivo de entorno y configurar
+      - name: Copy .env
+        run: cp .env.example .env
+
+      # 8. Paso 4: Instalar dependencias de Composer
+      - name: Install Composer Dependencies
+        run: composer install --no-progress --prefer-dist --optimize-autoloader
+
+      # 9. Paso 5: Generar clave de la aplicación
+      - name: Generate Application Key
+        run: php artisan key:generate
+
+      # 10. Paso 6: Verificar archivos de prueba correspondientes (LA MAGIA)
+      - name: Check for corresponding test files
+        run: |
+          echo "Verificando archivos de PHP modificados en el directorio 'app'..."
+          
+          # Obtiene la lista de archivos modificados comparando el commit anterior con el actual
+          # Esto funciona tanto para push como para pull_request
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.event.after }})
+          
+          # Filtra solo los archivos .php dentro del directorio 'app'
+          APP_FILES_CHANGED=$(echo "$CHANGED_FILES" | grep '^app/.*\.php$')
+
+          if [ -z "$APP_FILES_CHANGED" ]; then
+            echo "✅ No se modificaron archivos en el directorio 'app/'. Continuando..."
+            exit 0
+          fi
+
+          echo "Archivos de aplicación modificados:"
+          echo "$APP_FILES_CHANGED"
+          
+          FAILED=false
+          for file in $APP_FILES_CHANGED; do
+            # Ignora si el archivo fue eliminado
+            if [ ! -f "$file" ]; then
+              echo "ℹ️ El archivo '$file' fue eliminado. Omitiendo verificación."
+              continue
+            fi
+
+            # Convierte la ruta del archivo de la aplicación a la ruta de prueba esperada
+            # Ej: app/Models/User.php -> tests/Unit/Models/UserTest.php o tests/Feature/Models/UserTest.php
+            REL_PATH=${file#app/}
+            CLASS_NAME=${REL_PATH%.php}
+            
+            UNIT_TEST_PATH="tests/Unit/${CLASS_NAME}Test.php"
+            FEATURE_TEST_PATH="tests/Feature/${CLASS_NAME}Test.php"
+
+            # Verifica si existe el archivo de prueba Unitario o de Feature
+            if [ -f "$UNIT_TEST_PATH" ]; then
+              echo "✅ Encontrada prueba Unitaria para '$file' en '$UNIT_TEST_PATH'"
+            elif [ -f "$FEATURE_TEST_PATH" ]; then
+              echo "✅ Encontrada prueba de Feature para '$file' en '$FEATURE_TEST_PATH'"
+            else
+              echo "❌ ERROR: No se encontró un archivo de prueba para '$file'."
+              echo "   Se esperaba encontrar '$UNIT_TEST_PATH' o '$FEATURE_TEST_PATH'."
+              FAILED=true
+            fi
+          done
+
+          # Si algún archivo no tenía su prueba, el workflow falla aquí
+          if [ "$FAILED" = true ]; then
+            echo "-------------------------------------------"
+            echo "❌ El workflow falló porque uno o más archivos de aplicación no tienen una prueba correspondiente."
+            echo "   Por favor, crea las pruebas para los archivos modificados antes de continuar."
+            exit 1
+          fi
+          
+          echo "✅ Todos los archivos modificados tienen una prueba asociada."
+
+      # 11. Paso 7: Ejecutar migraciones y semillas
+      - name: Run Database Migrations
+        run: |
+          php artisan migrate --force
+          # php artisan db:seed --force # Descomenta si usas seeders
+
+      # 12. Paso 8: Ejecutar las pruebas
+      - name: Execute Tests (PHPUnit & Pest)
+        run: php artisan test --no-coverage # El flag --no-coverage lo hace más rápido. Quítalo si quieres ver el reporte de cobertura.
+        # Si quieres generar un reporte de cobertura, usa:
+        # run: php artisan test --coverage-clover=coverage.xml
+
+      # 13. Paso 9 (Opcional): Subir reporte de cobertura a Codecov
+      # - name: Upload coverage reports to Codecov
+      #   uses: codecov/codecov-action@v3
+      #   with:
+      #     file: ./coverage.xml
+      #     flags: unittests
+      #     name: codecov-umbrella
