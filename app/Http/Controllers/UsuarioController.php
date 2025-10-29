@@ -15,7 +15,7 @@ class UsuarioController extends SuperController
 
     /**
      * Constructor que configura el controlador con el modelo User
-     * y define las reglas de validación para las operaciones CRUD.
+     * y define las reglas de validación para las operaciones CRUD. Esto es para una prueba
      */
     public function __construct()
     {
