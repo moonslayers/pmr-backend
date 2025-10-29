@@ -5,7 +5,7 @@ name: Laravel Tests
 # 1. Disparador (Trigger)
 on:
   pull_request:
-    branches: [ main, develop ] # Se ejecuta en cada Pull Request a main o develop
+    branches: [ main, develop ]
 
 # 2. Permisos
 permissions:
@@ -14,7 +14,7 @@ permissions:
 # 3. Jobs (Tareas)
 jobs:
   laravel-tests:
-    runs-on: ubuntu-latest # Usamos la última versión de Ubuntu
+    runs-on: ubuntu-latest
 
     # 4. Servicios (Base de Datos)
     services:
@@ -28,7 +28,13 @@ jobs:
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
-          # 10. Paso 6: Verificar archivos de prueba correspondientes (LA MAGIA - VERSIÓN CORREGIDA)
+      # 5. Paso 1: Obtener el código del repositorio (PRIMERO)
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Necesario para obtener el historial completo
+
+      # 6. Paso 2: Verificar archivos de prueba correspondientes (AHORA DESPUÉS DEL CHECKOUT)
       - name: Check for corresponding test files
         run: |
           echo "Verificando archivos de PHP modificados en el directorio 'app'..."
@@ -39,33 +45,42 @@ jobs:
 
           # Maneja el caso de un nuevo branch (primer push)
           if [ "$BEFORE_SHA" == "0000000000000000000000000000000000000000" ]; then
-            echo "Detectado un nuevo branch. Comparando con el branch base (main/develop)."
-            # Para un PR, github.base_ref tiene el nombre del branch base.
-            # Para un push a un branch nuevo, no está disponible. Asumiremos 'main' o 'develop'.
-            # Necesitamos hacer fetch del branch base para poder comparar.
-            git fetch origin main
-            git fetch origin develop
+            echo "Detectado un nuevo branch. Comparando con el branch base..."
             
-            # Intenta encontrar el merge-base con 'main' o 'develop'
-            MERGE_BASE_MAIN=$(git merge-base HEAD origin/main 2>/dev/null)
-            MERGE_BASE_DEVELOP=$(git merge-base HEAD origin/develop 2>/dev/null)
-
-            if [ -n "$MERGE_BASE_MAIN" ]; then
-              CHANGED_FILES=$(git diff --name-only $MERGE_BASE_MAIN HEAD)
-            elif [ -n "$MERGE_BASE_DEVELOP" ]; then
-              CHANGED_FILES=$(git diff --name-only $MERGE_BASE_DEVELOP HEAD)
+            # Para PRs, usa github.base_ref si está disponible
+            if [ -n "${{ github.base_ref }}" ]; then
+              BASE_REF="${{ github.base_ref }}"
             else
-              # Si no hay merge-base (ej. primer commit del repo), lista todos los archivos del commit.
+              # Intenta determinar el branch base
+              BASE_REF="main"
+            fi
+            
+            echo "Comparando con branch base: $BASE_REF"
+            git fetch origin $BASE_REF
+            
+            # Encuentra el merge-base
+            MERGE_BASE=$(git merge-base HEAD origin/$BASE_REF 2>/dev/null || echo "")
+            
+            if [ -n "$MERGE_BASE" ]; then
+              CHANGED_FILES=$(git diff --name-only $MERGE_BASE HEAD)
+            else
+              # Si no hay merge-base, lista todos los archivos del commit
               echo "No se encontró un ancestro común. Listando todos los archivos del commit actual."
               CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r $AFTER_SHA)
             fi
           else
             # Caso normal, compara los SHAs before y after
-            CHANGED_FILES=$(git diff --name-only $BEFORE_SHA $AFTER_SHA)
+            CHANGED_FILES=$(git diff --name-only $BEFORE_SHA $AFTER_SHA 2>/dev/null || echo "")
+          fi
+          
+          # Si no hay cambios detectados, salir exitosamente
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "✅ No se detectaron archivos modificados. Continuando..."
+            exit 0
           fi
           
           # Filtra solo los archivos .php dentro del directorio 'app'
-          APP_FILES_CHANGED=$(echo "$CHANGED_FILES" | grep '^app/.*\.php$')
+          APP_FILES_CHANGED=$(echo "$CHANGED_FILES" | grep '^app/.*\.php$' || true)
 
           if [ -z "$APP_FILES_CHANGED" ]; then
             echo "✅ No se modificaron archivos en el directorio 'app/'. Continuando..."
@@ -109,30 +124,24 @@ jobs:
           fi
           
           echo "✅ Todos los archivos modificados tienen una prueba asociada."
-          
-      # 5. Paso 1: Obtener el código del repositorio
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Necesario para obtener el historial completo y comparar archivos
 
-      # 6. Paso 2: Configurar PHP
+      # 7. Paso 3: Configurar PHP
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3' # Cambia esto a la versión de PHP que uses
+          php-version: '8.3'
           extensions: bcmath, ctype, fileinfo, json, mbstring, openssl, pdo, tokenizer, xml, mysql, pdo_mysql
-          coverage: xdebug # Habilita XDebug para la cobertura de código (opcional)
+          coverage: xdebug
 
-      # 7. Paso 3: Copiar archivo de entorno y configurar
+      # 8. Paso 4: Copiar archivo de entorno y configurar
       - name: Copy .env
         run: cp .env.example .env
 
-      # 8. Paso 4: Instalar dependencias de Composer
+      # 9. Paso 5: Instalar dependencias de Composer
       - name: Install Composer Dependencies
         run: composer install --no-progress --prefer-dist --optimize-autoloader
 
-      # 9. Paso 5: Generar clave de la aplicación
+      # 10. Paso 6: Generar clave de la aplicación
       - name: Generate Application Key
         run: php artisan key:generate
 
@@ -140,18 +149,7 @@ jobs:
       - name: Run Database Migrations
         run: |
           php artisan migrate --force
-          # php artisan db:seed --force # Descomenta si usas seeders
 
       # 12. Paso 8: Ejecutar las pruebas
       - name: Execute Tests (PHPUnit & Pest)
-        run: php artisan test --no-coverage # El flag --no-coverage lo hace más rápido. Quítalo si quieres ver el reporte de cobertura.
-        # Si quieres generar un reporte de cobertura, usa:
-        # run: php artisan test --coverage-clover=coverage.xml
-
-      # 13. Paso 9 (Opcional): Subir reporte de cobertura a Codecov
-      # - name: Upload coverage reports to Codecov
-      #   uses: codecov/codecov-action@v3
-      #   with:
-      #     file: ./coverage.xml
-      #     flags: unittests
-      #     name: codecov-umbrella
+        run: php artisan test --no-coverage
