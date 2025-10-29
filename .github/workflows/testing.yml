@@ -28,6 +28,88 @@ jobs:
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
+          # 10. Paso 6: Verificar archivos de prueba correspondientes (LA MAGIA - VERSIÓN CORREGIDA)
+      - name: Check for corresponding test files
+        run: |
+          echo "Verificando archivos de PHP modificados en el directorio 'app'..."
+          
+          # Define los SHAs 'before' y 'after'
+          BEFORE_SHA="${{ github.event.before }}"
+          AFTER_SHA="${{ github.event.after }}"
+
+          # Maneja el caso de un nuevo branch (primer push)
+          if [ "$BEFORE_SHA" == "0000000000000000000000000000000000000000" ]; then
+            echo "Detectado un nuevo branch. Comparando con el branch base (main/develop)."
+            # Para un PR, github.base_ref tiene el nombre del branch base.
+            # Para un push a un branch nuevo, no está disponible. Asumiremos 'main' o 'develop'.
+            # Necesitamos hacer fetch del branch base para poder comparar.
+            git fetch origin main
+            git fetch origin develop
+            
+            # Intenta encontrar el merge-base con 'main' o 'develop'
+            MERGE_BASE_MAIN=$(git merge-base HEAD origin/main 2>/dev/null)
+            MERGE_BASE_DEVELOP=$(git merge-base HEAD origin/develop 2>/dev/null)
+
+            if [ -n "$MERGE_BASE_MAIN" ]; then
+              CHANGED_FILES=$(git diff --name-only $MERGE_BASE_MAIN HEAD)
+            elif [ -n "$MERGE_BASE_DEVELOP" ]; then
+              CHANGED_FILES=$(git diff --name-only $MERGE_BASE_DEVELOP HEAD)
+            else
+              # Si no hay merge-base (ej. primer commit del repo), lista todos los archivos del commit.
+              echo "No se encontró un ancestro común. Listando todos los archivos del commit actual."
+              CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r $AFTER_SHA)
+            fi
+          else
+            # Caso normal, compara los SHAs before y after
+            CHANGED_FILES=$(git diff --name-only $BEFORE_SHA $AFTER_SHA)
+          fi
+          
+          # Filtra solo los archivos .php dentro del directorio 'app'
+          APP_FILES_CHANGED=$(echo "$CHANGED_FILES" | grep '^app/.*\.php$')
+
+          if [ -z "$APP_FILES_CHANGED" ]; then
+            echo "✅ No se modificaron archivos en el directorio 'app/'. Continuando..."
+            exit 0
+          fi
+
+          echo "Archivos de aplicación modificados:"
+          echo "$APP_FILES_CHANGED"
+          
+          FAILED=false
+          for file in $APP_FILES_CHANGED; do
+            # Ignora si el archivo fue eliminado
+            if [ ! -f "$file" ]; then
+              echo "ℹ️ El archivo '$file' fue eliminado. Omitiendo verificación."
+              continue
+            fi
+
+            # Convierte la ruta del archivo de la aplicación a la ruta de prueba esperada
+            REL_PATH=${file#app/}
+            CLASS_NAME=${REL_PATH%.php}
+            
+            UNIT_TEST_PATH="tests/Unit/${CLASS_NAME}Test.php"
+            FEATURE_TEST_PATH="tests/Feature/${CLASS_NAME}Test.php"
+
+            if [ -f "$UNIT_TEST_PATH" ]; then
+              echo "✅ Encontrada prueba Unitaria para '$file' en '$UNIT_TEST_PATH'"
+            elif [ -f "$FEATURE_TEST_PATH" ]; then
+              echo "✅ Encontrada prueba de Feature para '$file' en '$FEATURE_TEST_PATH'"
+            else
+              echo "❌ ERROR: No se encontró un archivo de prueba para '$file'."
+              echo "   Se esperaba encontrar '$UNIT_TEST_PATH' o '$FEATURE_TEST_PATH'."
+              FAILED=true
+            fi
+          done
+
+          if [ "$FAILED" = true ]; then
+            echo "-------------------------------------------"
+            echo "❌ El workflow falló porque uno o más archivos de aplicación no tienen una prueba correspondiente."
+            echo "   Por favor, crea las pruebas para los archivos modificados antes de continuar."
+            exit 1
+          fi
+          
+          echo "✅ Todos los archivos modificados tienen una prueba asociada."
+          
       # 5. Paso 1: Obtener el código del repositorio
       - name: Checkout code
         uses: actions/checkout@v4
@@ -53,64 +135,6 @@ jobs:
       # 9. Paso 5: Generar clave de la aplicación
       - name: Generate Application Key
         run: php artisan key:generate
-
-      # 10. Paso 6: Verificar archivos de prueba correspondientes (LA MAGIA)
-      - name: Check for corresponding test files
-        run: |
-          echo "Verificando archivos de PHP modificados en el directorio 'app'..."
-          
-          # Obtiene la lista de archivos modificados comparando el commit anterior con el actual
-          # Esto funciona tanto para push como para pull_request
-          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.event.after }})
-          
-          # Filtra solo los archivos .php dentro del directorio 'app'
-          APP_FILES_CHANGED=$(echo "$CHANGED_FILES" | grep '^app/.*\.php$')
-
-          if [ -z "$APP_FILES_CHANGED" ]; then
-            echo "✅ No se modificaron archivos en el directorio 'app/'. Continuando..."
-            exit 0
-          fi
-
-          echo "Archivos de aplicación modificados:"
-          echo "$APP_FILES_CHANGED"
-          
-          FAILED=false
-          for file in $APP_FILES_CHANGED; do
-            # Ignora si el archivo fue eliminado
-            if [ ! -f "$file" ]; then
-              echo "ℹ️ El archivo '$file' fue eliminado. Omitiendo verificación."
-              continue
-            fi
-
-            # Convierte la ruta del archivo de la aplicación a la ruta de prueba esperada
-            # Ej: app/Models/User.php -> tests/Unit/Models/UserTest.php o tests/Feature/Models/UserTest.php
-            REL_PATH=${file#app/}
-            CLASS_NAME=${REL_PATH%.php}
-            
-            UNIT_TEST_PATH="tests/Unit/${CLASS_NAME}Test.php"
-            FEATURE_TEST_PATH="tests/Feature/${CLASS_NAME}Test.php"
-
-            # Verifica si existe el archivo de prueba Unitario o de Feature
-            if [ -f "$UNIT_TEST_PATH" ]; then
-              echo "✅ Encontrada prueba Unitaria para '$file' en '$UNIT_TEST_PATH'"
-            elif [ -f "$FEATURE_TEST_PATH" ]; then
-              echo "✅ Encontrada prueba de Feature para '$file' en '$FEATURE_TEST_PATH'"
-            else
-              echo "❌ ERROR: No se encontró un archivo de prueba para '$file'."
-              echo "   Se esperaba encontrar '$UNIT_TEST_PATH' o '$FEATURE_TEST_PATH'."
-              FAILED=true
-            fi
-          done
-
-          # Si algún archivo no tenía su prueba, el workflow falla aquí
-          if [ "$FAILED" = true ]; then
-            echo "-------------------------------------------"
-            echo "❌ El workflow falló porque uno o más archivos de aplicación no tienen una prueba correspondiente."
-            echo "   Por favor, crea las pruebas para los archivos modificados antes de continuar."
-            exit 1
-          fi
-          
-          echo "✅ Todos los archivos modificados tienen una prueba asociada."
 
       # 11. Paso 7: Ejecutar migraciones y semillas
       - name: Run Database Migrations
