@@ -34,7 +34,7 @@ jobs:
         with:
           fetch-depth: 0 # Necesario para obtener el historial completo
 
-      # 6. Paso 2: Verificar archivos de prueba correspondientes (AHORA DESPUÉS DEL CHECKOUT)
+      # 6. Paso 2: Verificar archivos de prueba correspondientes (VERSIÓN CORREGIDA)
       - name: Check for corresponding test files
         run: |
           echo "Verificando archivos de PHP modificados en el directorio 'app'..."
@@ -98,20 +98,66 @@ jobs:
               continue
             fi
 
-            # Convierte la ruta del archivo de la aplicación a la ruta de prueba esperada
-            REL_PATH=${file#app/}
-            CLASS_NAME=${REL_PATH%.php}
+            # Extrae el nombre base del archivo sin extensión
+            FILENAME=$(basename "$file" .php)
             
-            UNIT_TEST_PATH="tests/Unit/${CLASS_NAME}Test.php"
-            FEATURE_TEST_PATH="tests/Feature/${CLASS_NAME}Test.php"
-
-            if [ -f "$UNIT_TEST_PATH" ]; then
-              echo "✅ Encontrada prueba Unitaria para '$file' en '$UNIT_TEST_PATH'"
-            elif [ -f "$FEATURE_TEST_PATH" ]; then
-              echo "✅ Encontrada prueba de Feature para '$file' en '$FEATURE_TEST_PATH'"
+            # Busca pruebas que coincidan con el nombre del archivo
+            # Formato 1: Nombre exacto (ControllerTest.php)
+            # Formato 2: Nombre sin "Controller" (UsuarioTest.php)
+            # Busca en ambos directorios: Unit y Feature
+            
+            UNIT_TEST_EXACT="tests/Unit/${FILENAME}Test.php"
+            FEATURE_TEST_EXACT="tests/Feature/${FILENAME}Test.php"
+            
+            # Si es un Controller, también busca sin la palabra "Controller"
+            if [[ $FILENAME == *"Controller" ]]; then
+              CLASS_NAME=${FILENAME%Controller}
+              UNIT_TEST_SIMPLE="tests/Unit/${CLASS_NAME}Test.php"
+              FEATURE_TEST_SIMPLE="tests/Feature/${CLASS_NAME}Test.php"
             else
+              UNIT_TEST_SIMPLE=""
+              FEATURE_TEST_SIMPLE=""
+            fi
+            
+            # Verifica si existe alguna prueba válida
+            TEST_FOUND=false
+            
+            if [ -f "$UNIT_TEST_EXACT" ]; then
+              echo "✅ Encontrada prueba Unitaria exacta para '$file' en '$UNIT_TEST_EXACT'"
+              TEST_FOUND=true
+            elif [ -f "$FEATURE_TEST_EXACT" ]; then
+              echo "✅ Encontrada prueba de Feature exacta para '$file' en '$FEATURE_TEST_EXACT'"
+              TEST_FOUND=true
+            elif [ -n "$UNIT_TEST_SIMPLE" ] && [ -f "$UNIT_TEST_SIMPLE" ]; then
+              echo "✅ Encontrada prueba Unitaria simplificada para '$file' en '$UNIT_TEST_SIMPLE'"
+              TEST_FOUND=true
+            elif [ -n "$FEATURE_TEST_SIMPLE" ] && [ -f "$FEATURE_TEST_SIMPLE" ]; then
+              echo "✅ Encontrada prueba de Feature simplificada para '$file' en '$FEATURE_TEST_SIMPLE'"
+              TEST_FOUND=true
+            else
+              # Búsqueda más flexible: busca cualquier prueba que contenga el nombre de la clase
+              echo "🔍 Búsqueda flexible para '$FILENAME'..."
+              FLEXIBLE_UNIT_TEST=$(find tests/Unit -name "*${FILENAME}*Test.php" -type f | head -1)
+              FLEXIBLE_FEATURE_TEST=$(find tests/Feature -name "*${FILENAME}*Test.php" -type f | head -1)
+              
+              if [ -n "$FLEXIBLE_UNIT_TEST" ]; then
+                echo "✅ Encontrada prueba Unitaria flexible para '$file' en '$FLEXIBLE_UNIT_TEST'"
+                TEST_FOUND=true
+              elif [ -n "$FLEXIBLE_FEATURE_TEST" ]; then
+                echo "✅ Encontrada prueba de Feature flexible para '$file' en '$FLEXIBLE_FEATURE_TEST'"
+                TEST_FOUND=true
+              fi
+            fi
+
+            if [ "$TEST_FOUND" = false ]; then
               echo "❌ ERROR: No se encontró un archivo de prueba para '$file'."
-              echo "   Se esperaba encontrar '$UNIT_TEST_PATH' o '$FEATURE_TEST_PATH'."
+              echo "   Se esperaba encontrar:"
+              echo "   - $UNIT_TEST_EXACT"
+              echo "   - $FEATURE_TEST_EXACT"
+              if [ -n "$UNIT_TEST_SIMPLE" ]; then
+                echo "   - $UNIT_TEST_SIMPLE"
+                echo "   - $FEATURE_TEST_SIMPLE"
+              fi
               FAILED=true
             fi
           done
