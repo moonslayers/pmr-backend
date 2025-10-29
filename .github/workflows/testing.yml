@@ -141,6 +141,6 @@ jobs:
       - name: Install Composer Dependencies
         run: composer install --no-progress --prefer-dist --optimize-autoloader
 
-      # 12. Paso 8: Ejecutar las pruebas
+      # 10. Paso 8: Ejecutar las pruebas
       - name: Execute Tests (PHPUnit & Pest)
         run: php artisan test
