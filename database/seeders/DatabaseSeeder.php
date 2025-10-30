@@ -20,6 +20,9 @@ class DatabaseSeeder extends Seeder
 
         // Crear los roles y permisos del sistema
         $this->call(RolesAndPermissionsSeeder::class);
+        
+        // Crear los catálogos Iniciales de los usuarios externos
+        $this->call(UnidadesAdministrativasSeeder::class);
 
         // Opcional: Crear usuarios de prueba para desarrollo
         // Descomenta las siguientes líneas si necesitas usuarios de prueba

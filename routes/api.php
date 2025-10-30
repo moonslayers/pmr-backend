@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\UnidadesAdministrativasController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\LoginController;
@@ -50,6 +51,9 @@ Route::middleware('auth:sanctum')->get('/usuarios/{id}', [UsuarioController::cla
 Route::middleware('auth:sanctum')->put('/usuarios/{id}', [UsuarioController::class, 'update']);
 Route::middleware('auth:sanctum')->patch('/usuarios/{id}', [UsuarioController::class, 'update']);
 Route::middleware(['auth:sanctum', 'permission:usuarios.eliminar.any'])->delete('/usuarios/{id}', [UsuarioController::class, 'destroy']);
+
+// Rutas Usuarios Externos - Datos Iniciales
+Route::middleware(['auth:sanctum'])->get('/unidades-administrativas', [UnidadesAdministrativasController::class, 'index']);
 
 // Rutas para gestión de roles (Solo administradores)
 Route::middleware(['auth:sanctum', 'permission:usuarios.editar.any'])->prefix('roles')->group(function () {
