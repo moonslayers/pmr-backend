@@ -52,8 +52,10 @@ Route::middleware('auth:sanctum')->put('/usuarios/{id}', [UsuarioController::cla
 Route::middleware('auth:sanctum')->patch('/usuarios/{id}', [UsuarioController::class, 'update']);
 Route::middleware(['auth:sanctum', 'permission:usuarios.eliminar.any'])->delete('/usuarios/{id}', [UsuarioController::class, 'destroy']);
 
-// Rutas Usuarios Externos - Datos Iniciales
+// UE - Datos Iniciales
 Route::middleware(['auth:sanctum'])->get('/unidades-administrativas', [UnidadesAdministrativasController::class, 'index']);
+// UE - Propuestas
+Route::middleware(['auth:sanctum'])->get('/propuestas', [\App\Http\Controllers\PropuestasController::class, 'index']);
 
 // Rutas para gestión de roles (Solo administradores)
 Route::middleware(['auth:sanctum', 'permission:usuarios.editar.any'])->prefix('roles')->group(function () {
